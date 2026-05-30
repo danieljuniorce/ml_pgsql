@@ -2,6 +2,10 @@
 #include <vector>
 #include <cstdio>
 
+#ifndef LUA_OK
+#define LUA_OK 0
+#endif
+
 void CPostgresManager::Add(CPostgresConnection* pConn)
 {
     std::lock_guard<std::mutex> lock(m_mutex);
