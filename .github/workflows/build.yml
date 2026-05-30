@@ -21,29 +21,23 @@ jobs:
           - arch: x86
             msbuild_platform: Win32
             bin_dir: x86
-            vcpkg_triplet: x86-windows-static
           - arch: x64
             msbuild_platform: x64
             bin_dir: x64
-            vcpkg_triplet: x64-windows-static
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Cache vcpkg packages
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.VCPKG_INSTALLATION_ROOT }}\installed
-          key: vcpkg-libpq-${{ matrix.vcpkg_triplet }}-v1
-
-      - name: Install libpq via vcpkg (${{ matrix.arch }})
+      - name: Fix libpq x64 (pre-installed PostgreSQL on runner — no download needed)
+        if: matrix.arch == 'x64'
         shell: powershell
         run: |
-          vcpkg install "libpq:${{ matrix.vcpkg_triplet }}" --no-print-usage
-          $src = "$env:VCPKG_INSTALLATION_ROOT\installed\${{ matrix.vcpkg_triplet }}\lib\libpq.lib"
-          Copy-Item $src "libs\${{ matrix.bin_dir }}\libpq.lib" -Force
-          Write-Host "Replaced libs\${{ matrix.bin_dir }}\libpq.lib with vcpkg ${{ matrix.vcpkg_triplet }} build"
+          $pgBase = "C:\Program Files\PostgreSQL"
+          $pgVer  = (Get-ChildItem $pgBase | Sort-Object Name -Descending | Select-Object -First 1).Name
+          $src    = "$pgBase\$pgVer\lib\libpq.lib"
+          Copy-Item $src "libs\x64\libpq.lib" -Force
+          Write-Host "Replaced libs\x64\libpq.lib with PostgreSQL $pgVer import lib"
 
       - name: Update Premake5 to beta2 (bundled exe is too old for vs2022)
         shell: powershell
