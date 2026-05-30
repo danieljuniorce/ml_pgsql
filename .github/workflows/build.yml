@@ -29,6 +29,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Update Premake5 to beta2 (bundled exe is too old for vs2022)
+        shell: powershell
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/premake/premake-core/releases/download/v5.0.0-beta2/premake-5.0.0-beta2-windows.zip" -OutFile premake5.zip -UseBasicParsing
+          Expand-Archive premake5.zip -DestinationPath premake5_dl
+          Move-Item premake5_dl\premake5.exe utils\premake5.exe -Force
+
       - name: Generate project files (Premake5 → VS2022)
         shell: cmd
         run: utils\premake5.exe vs2022
@@ -75,7 +82,9 @@ jobs:
           mv premake5 utils/premake5
 
       - name: Build Linux x64 Release
-        run: ./linux-build.sh release 64
+        run: |
+          chmod +x linux-build.sh
+          ./linux-build.sh release 64
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
