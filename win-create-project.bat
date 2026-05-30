@@ -1,7 +1,11 @@
 @echo off
 
+rem Download premake5 beta2 (bundled exe is too old for vs2022)
+powershell -NoProfile -NonInteractive -Command ^
+  "Invoke-WebRequest -Uri 'https://github.com/premake/premake-core/releases/download/v5.0.0-beta2/premake-5.0.0-beta2-windows.zip' -OutFile '%TEMP%\premake5.zip' -UseBasicParsing; Expand-Archive '%TEMP%\premake5.zip' -DestinationPath '%TEMP%\premake5_dl' -Force; Copy-Item '%TEMP%\premake5_dl\premake5.exe' 'utils\premake5.exe' -Force"
+
 rem Generate solutions
-utils\premake5.exe vs2019
+utils\premake5.exe vs2022
 
 rem Create a shortcut to the solution - http://superuser.com/questions/392061/how-to-make-a-shortcut-from-cmd
 set SCRIPTFILE="%TEMP%\CreateMyShortcut.vbs"
