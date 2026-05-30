@@ -112,7 +112,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ml_pgsql-linux-x64
-          path: Bin/x64/release/ml_pgsql.so
+          path: Bin/x64/Release/ml_pgsql.so
           if-no-files-found: error
 
   # ──────────────────────────────────────────────────────────────
