@@ -6,6 +6,17 @@ on:
     tags: ['v*']
   pull_request:
     branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Versão a publicar (ex: v1.2.3)'
+        required: true
+        type: string
+      prerelease:
+        description: 'Marcar como pré-lançamento'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -113,31 +124,25 @@ jobs:
           if-no-files-found: error
 
   # ──────────────────────────────────────────────────────────────
-  # Release — only on v* tag push
+  # Release — tag v* push  OR  manual workflow_dispatch
   # ──────────────────────────────────────────────────────────────
   release:
     name: Publish Release
     needs: [build-windows, build-linux]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     permissions:
       contents: write
 
     steps:
-      - name: Checkout (for branch verification)
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Verify tag is on main branch
+      - name: Resolve release tag
+        id: tag
         run: |
-          git fetch origin main
-          if ! git merge-base --is-ancestor "${{ github.sha }}" origin/main; then
-            echo "ERROR: Tags must be created from the main branch."
-            echo "Merge the PR first, then tag the merge commit on main."
-            exit 1
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "name=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
           fi
-          echo "Tag is on main — proceeding with release."
 
       - name: Download Windows x86
         uses: actions/download-artifact@v4
@@ -166,6 +171,8 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.tag.outputs.name }}
+          prerelease: ${{ inputs.prerelease || false }}
           files: |
             ml_pgsql32.dll
             ml_pgsql64.dll
