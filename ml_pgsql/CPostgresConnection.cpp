@@ -1,62 +1,70 @@
 #include "CPostgresConnection.h"
+#include <vector>
 
-
-CPostgresConnection::CPostgresConnection(lua_State* pLuaVM, const char* szConnectionInfo) : m_pLuaVM{pLuaVM}
+/* Collect Lua string args from startIdx to top of stack (correct order for $1..$N). */
+static std::vector<const char*> collectArgs(lua_State* luaVM, int startIdx)
 {
-    m_pConnection = PQconnectdb(szConnectionInfo);
+    int count = lua_gettop(luaVM);
+    std::vector<const char*> args;
+    args.reserve(static_cast<size_t>(count - startIdx + 1));
+    for (int i = startIdx; i <= count; i++)
+        args.push_back(luaL_checkstring(luaVM, i));
+    return args;
 }
 
+CPostgresConnection::CPostgresConnection(lua_State* pLuaVM, const char* szConnectionInfo)
+    : m_pLuaVM{pLuaVM}
+{
+    m_pConnection = PQconnectdb(szConnectionInfo);
+    if (IsConnected())
+        PQsetnonblocking(m_pConnection, 1);
+}
 
 CPostgresConnection::~CPostgresConnection()
 {
     PQfinish(m_pConnection);
 }
 
-PGresult* CPostgresConnection::Query(lua_State* luaVM)
+/* Stack on entry: sql [, param1, param2, ...] */
+bool CPostgresConnection::SendQuery(lua_State* luaVM)
 {
-    libpq_query_t query_str = luaL_checkstring(luaVM, 2);
-
-    lua_remove(luaVM, 1);
-    lua_remove(luaVM, 1);
-
-    int args_count = lua_gettop(luaVM);
-
-    std::vector<const char*> args{};
-    for (int i = args_count; i > 0; --i) {
-        args.push_back(luaL_checkstring(luaVM, i));
-    }
-
-    PGresult* pResult = PQexecParams(m_pConnection, query_str.c_str(), args.size(), NULL, (char**)args.data(), NULL, NULL, 0);
-
-    if (pResult && PQresultStatus(pResult) == PGRES_TUPLES_OK)
-    {
-        return pResult;
-    }
-
-    return nullptr;
+    const char* query = luaL_checkstring(luaVM, 1);
+    auto args = collectArgs(luaVM, 2);
+    int ok = PQsendQueryParams(m_pConnection, query,
+                               static_cast<int>(args.size()), NULL,
+                               args.data(), NULL, NULL, 0);
+    if (ok == 1) { m_bQueryInFlight = true; return true; }
+    return false;
 }
 
-bool CPostgresConnection::Exec(lua_State* luaVM)
+/* Identical send path — distinction is in result status check inside ProcessPendingQueries. */
+bool CPostgresConnection::SendExec(lua_State* luaVM)
 {
-    libpq_query_t query_str = luaL_checkstring(luaVM, 2);
+    const char* query = luaL_checkstring(luaVM, 1);
+    auto args = collectArgs(luaVM, 2);
+    int ok = PQsendQueryParams(m_pConnection, query,
+                               static_cast<int>(args.size()), NULL,
+                               args.data(), NULL, NULL, 0);
+    if (ok == 1) { m_bQueryInFlight = true; return true; }
+    return false;
+}
 
-    lua_remove(luaVM, 1);
-    lua_remove(luaVM, 1);
+/* Synchronous prepare (fast — only sends the parse message, no data). */
+bool CPostgresConnection::Prepare(const char* stmtName, const char* query)
+{
+    PGresult* res = PQprepare(m_pConnection, stmtName, query, 0, NULL);
+    bool ok = res && PQresultStatus(res) == PGRES_COMMAND_OK;
+    if (res) PQclear(res);
+    return ok;
+}
 
-    int args_count = lua_gettop(luaVM);
-
-    std::vector<const char*> args{};
-    for (int i = args_count; i > 0; --i) {
-        args.push_back(luaL_checkstring(luaVM, i));
-    }
-
-    PGresult* pResult = PQexecParams(m_pConnection, query_str.c_str(), args.size(), NULL, (char**)args.data(), NULL, NULL, 0);
-
-    if (PQresultStatus(pResult) == PGRES_TUPLES_OK)
-    {
-        return false;
-    }
-
-    PQclear(pResult);
-    return true;
+/* Stack on entry: [param1, param2, ...] */
+bool CPostgresConnection::SendQueryPrepared(lua_State* luaVM, const char* stmtName)
+{
+    auto args = collectArgs(luaVM, 1);
+    int ok = PQsendQueryPrepared(m_pConnection, stmtName,
+                                 static_cast<int>(args.size()),
+                                 args.data(), NULL, NULL, 0);
+    if (ok == 1) { m_bQueryInFlight = true; return true; }
+    return false;
 }

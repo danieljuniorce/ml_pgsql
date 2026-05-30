@@ -1,0 +1,167 @@
+name: Build and Release
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  # ──────────────────────────────────────────────────────────────
+  # Windows — x86 and x64
+  # ──────────────────────────────────────────────────────────────
+  build-windows:
+    name: Windows ${{ matrix.arch }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86
+            msbuild_platform: Win32
+            bin_dir: x86
+          - arch: x64
+            msbuild_platform: x64
+            bin_dir: x64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Generate project files (Premake5 → VS2022)
+        shell: cmd
+        run: utils\premake5.exe vs2022
+
+      - name: Add MSBuild to PATH
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build ${{ matrix.arch }} Release
+        shell: cmd
+        run: >
+          msbuild Build\ml_pgsql.sln
+          /p:Configuration=Release
+          /p:Platform=${{ matrix.msbuild_platform }}
+          /m /nologo /verbosity:minimal
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ml_pgsql-windows-${{ matrix.arch }}
+          path: Bin/${{ matrix.bin_dir }}/Release/ml_pgsql.dll
+          if-no-files-found: error
+
+  # ──────────────────────────────────────────────────────────────
+  # Linux — x64
+  # ──────────────────────────────────────────────────────────────
+  build-linux:
+    name: Linux x64
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y libpq-dev
+
+      - name: Download Premake5 (Linux)
+        run: |
+          wget -q https://github.com/premake/premake-core/releases/download/v5.0.0-beta2/premake-5.0.0-beta2-linux.tar.gz
+          tar -xf premake-5.0.0-beta2-linux.tar.gz
+          chmod +x premake5
+          mv premake5 utils/premake5
+
+      - name: Build Linux x64 Release
+        run: ./linux-build.sh release 64
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ml_pgsql-linux-x64
+          path: Bin/x64/release/ml_pgsql.so
+          if-no-files-found: error
+
+  # ──────────────────────────────────────────────────────────────
+  # Release — only on v* tag push
+  # ──────────────────────────────────────────────────────────────
+  release:
+    name: Publish Release
+    needs: [build-windows, build-linux]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download Windows x86
+        uses: actions/download-artifact@v4
+        with:
+          name: ml_pgsql-windows-x86
+          path: artifacts/win-x86
+
+      - name: Download Windows x64
+        uses: actions/download-artifact@v4
+        with:
+          name: ml_pgsql-windows-x64
+          path: artifacts/win-x64
+
+      - name: Download Linux x64
+        uses: actions/download-artifact@v4
+        with:
+          name: ml_pgsql-linux-x64
+          path: artifacts/linux-x64
+
+      - name: Rename artifacts for release
+        run: |
+          cp artifacts/win-x86/ml_pgsql.dll  ml_pgsql32.dll
+          cp artifacts/win-x64/ml_pgsql.dll  ml_pgsql64.dll
+          cp artifacts/linux-x64/ml_pgsql.so ml_pgsql64.so
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ml_pgsql32.dll
+            ml_pgsql64.dll
+            ml_pgsql64.so
+          generate_release_notes: true
+          body: |
+            ## Install
+
+            Place the file matching your MTA:SA server architecture in `server/mods/deathmatch/modules/`
+            and add to `mtaserver.conf`:
+
+            ```xml
+            <module src="ml_pgsql64.dll"/>
+            ```
+
+            | File | Platform |
+            |------|----------|
+            | `ml_pgsql32.dll` | Windows x86 |
+            | `ml_pgsql64.dll` | Windows x64 |
+            | `ml_pgsql64.so`  | Linux x64   |
+
+            ## API
+
+            ```lua
+            local conn = pg_conn("postgresql://user:pass@host:5432/db")
+
+            pg_query(conn, function(result)
+                if result then
+                    local rows = pg_poll(result)
+                end
+            end, "SELECT id, nome FROM players WHERE id = $1", playerId)
+
+            pg_exec(conn, function(ok) end,
+                "INSERT INTO players (nome) VALUES ($1)", playerName)
+
+            pg_prepare(conn, "get_player", "SELECT * FROM players WHERE id = $1")
+            pg_query_prepared(conn, "get_player", function(result)
+                local rows = pg_poll(result)
+            end, playerId)
+
+            pg_close(conn)
+            ```

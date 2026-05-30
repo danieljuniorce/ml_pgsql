@@ -1,7 +1,7 @@
 @echo off
 
 rem Generate solutions
-utils\premake5.exe vs2019
+utils\premake5.exe vs2022
 
 rem Create a shortcut to the solution - http://superuser.com/questions/392061/how-to-make-a-shortcut-from-cmd
 set SCRIPTFILE="%TEMP%\CreateMyShortcut.vbs"
