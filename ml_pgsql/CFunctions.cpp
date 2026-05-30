@@ -46,7 +46,7 @@ int CFunctions::pg_query(lua_State* luaVM)
     LUA_FUNCTION_ASSERT("pg_query", lua_isfunction(luaVM, 2));
 
     auto* pConn = static_cast<CPostgresConnection*>(lua_touserdata(luaVM, 1));
-    LUA_FUNCTION_ASSERT("pg_query", pConn && pConn->IsConnected());
+    LUA_FUNCTION_ASSERT("pg_query", g_pPostgresManager->IsLive(pConn) && pConn->IsConnected());
     LUA_FUNCTION_ASSERT("pg_query", !pConn->IsQueryInFlight());
 
     int ref = storeCallbackRef(luaVM);
@@ -72,7 +72,7 @@ int CFunctions::pg_exec(lua_State* luaVM)
     LUA_FUNCTION_ASSERT("pg_exec", lua_isfunction(luaVM, 2));
 
     auto* pConn = static_cast<CPostgresConnection*>(lua_touserdata(luaVM, 1));
-    LUA_FUNCTION_ASSERT("pg_exec", pConn && pConn->IsConnected());
+    LUA_FUNCTION_ASSERT("pg_exec", g_pPostgresManager->IsLive(pConn) && pConn->IsConnected());
     LUA_FUNCTION_ASSERT("pg_exec", !pConn->IsQueryInFlight());
 
     int ref = storeCallbackRef(luaVM);
@@ -147,7 +147,7 @@ int CFunctions::pg_close(lua_State* luaVM)
     LUA_FUNCTION_ASSERT("pg_close", lua_gettop(luaVM) == 1);
 
     CPostgresConnection* pConn = static_cast<CPostgresConnection*>(lua_touserdata(luaVM, 1));
-    if (pConn)
+    if (g_pPostgresManager->IsLive(pConn))
     {
         g_pPostgresManager->RemoveConnection(pConn);
         lua_pushboolean(luaVM, true);
@@ -165,7 +165,7 @@ int CFunctions::pg_prepare(lua_State* luaVM)
     LUA_FUNCTION_ASSERT("pg_prepare", lua_gettop(luaVM) == 3);
 
     auto* pConn = static_cast<CPostgresConnection*>(lua_touserdata(luaVM, 1));
-    LUA_FUNCTION_ASSERT("pg_prepare", pConn && pConn->IsConnected());
+    LUA_FUNCTION_ASSERT("pg_prepare", g_pPostgresManager->IsLive(pConn) && pConn->IsConnected());
     LUA_FUNCTION_ASSERT("pg_prepare", !pConn->IsQueryInFlight());
 
     const char* stmtName = luaL_checkstring(luaVM, 2);
@@ -183,7 +183,7 @@ int CFunctions::pg_query_prepared(lua_State* luaVM)
     LUA_FUNCTION_ASSERT("pg_query_prepared", lua_isfunction(luaVM, 3));
 
     auto* pConn = static_cast<CPostgresConnection*>(lua_touserdata(luaVM, 1));
-    LUA_FUNCTION_ASSERT("pg_query_prepared", pConn && pConn->IsConnected());
+    LUA_FUNCTION_ASSERT("pg_query_prepared", g_pPostgresManager->IsLive(pConn) && pConn->IsConnected());
     LUA_FUNCTION_ASSERT("pg_query_prepared", !pConn->IsQueryInFlight());
 
     const char* stmtName = luaL_checkstring(luaVM, 2);

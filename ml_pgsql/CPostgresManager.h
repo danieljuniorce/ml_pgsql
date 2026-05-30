@@ -24,6 +24,7 @@ public:
     void CloseAllConnections(lua_State* pLuaVM = nullptr);
     void RemoveConnection(CPostgresConnection* pConnection);
 
+    bool IsLive(CPostgresConnection* pConn);
     void AddPendingQuery(CPostgresConnection* pConn, PendingQuery q);
     void ProcessPendingQueries();
 };

@@ -7,6 +7,9 @@ on:
   pull_request:
     branches: [main, master]
 
+permissions:
+  contents: read
+
 jobs:
   # ──────────────────────────────────────────────────────────────
   # Windows — x86 and x64
@@ -121,6 +124,21 @@ jobs:
       contents: write
 
     steps:
+      - name: Checkout (for branch verification)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify tag is on main branch
+        run: |
+          git fetch origin main
+          if ! git merge-base --is-ancestor "${{ github.sha }}" origin/main; then
+            echo "ERROR: Tags must be created from the main branch."
+            echo "Merge the PR first, then tag the merge commit on main."
+            exit 1
+          fi
+          echo "Tag is on main — proceeding with release."
+
       - name: Download Windows x86
         uses: actions/download-artifact@v4
         with:

@@ -1,4 +1,6 @@
 #include "CPostgresManager.h"
+#include <vector>
+#include <cstdio>
 
 void CPostgresManager::Add(CPostgresConnection* pConn)
 {
@@ -13,6 +15,12 @@ CPostgresConnection* CPostgresManager::NewConnection(lua_State* pLuaVM)
     if (pConnection && pConnection->IsConnected())
         g_pPostgresManager->Add(pConnection);
     return pConnection;
+}
+
+bool CPostgresManager::IsLive(CPostgresConnection* pConn)
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_setConnections.count(pConn) != 0;
 }
 
 void CPostgresManager::CloseAllConnections(lua_State* pLuaVM)
@@ -58,38 +66,63 @@ void CPostgresManager::AddPendingQuery(CPostgresConnection* pConn, PendingQuery 
 
 void CPostgresManager::ProcessPendingQueries()
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    struct ReadyEntry {
+        CPostgresConnection* pConn;
+        PendingQuery         pq;
+        PGresult*            result;
+    };
+    std::vector<ReadyEntry> ready;
 
-    for (auto it = m_pendingQueries.begin(); it != m_pendingQueries.end(); )
+    /* Collect ready entries under the lock, then release before invoking Lua callbacks.
+     * Holding m_mutex during lua_pcall would deadlock if any callback calls pg_query/pg_exec. */
     {
-        CPostgresConnection* pConn = it->first;
-        PendingQuery&        pq    = it->second;
-        PGconn*              conn  = pConn->GetConnection();
+        std::lock_guard<std::mutex> lock(m_mutex);
+        for (auto it = m_pendingQueries.begin(); it != m_pendingQueries.end(); )
+        {
+            CPostgresConnection* pConn = it->first;
+            PGconn*              conn  = pConn->GetConnection();
 
-        PQconsumeInput(conn);
-        if (PQisBusy(conn)) { ++it; continue; }
+            PQconsumeInput(conn);
+            if (PQisBusy(conn)) { ++it; continue; }
 
-        PGresult* result = PQgetResult(conn);
+            PGresult* result = PQgetResult(conn);
+            ready.push_back({ pConn, it->second, result });
+            pConn->SetQueryInFlight(false);
+            it = m_pendingQueries.erase(it);
+        }
+    }
+
+    for (auto& e : ready)
+    {
+        PendingQuery& pq   = e.pq;
+        PGconn*       conn = e.pConn->GetConnection();
 
         lua_rawgeti(pq.luaVM, LUA_REGISTRYINDEX, pq.callbackRef);
 
         if (pq.isExec)
         {
-            bool ok = result && PQresultStatus(result) == PGRES_COMMAND_OK;
-            if (result) PQclear(result);
+            bool ok = e.result && PQresultStatus(e.result) == PGRES_COMMAND_OK;
+            if (e.result) PQclear(e.result);
             lua_pushboolean(pq.luaVM, ok);
-            lua_pcall(pq.luaVM, 1, 0, 0);
         }
         else
         {
-            if (result && PQresultStatus(result) == PGRES_TUPLES_OK)
-                lua_pushlightuserdata(pq.luaVM, result);
+            if (e.result && PQresultStatus(e.result) == PGRES_TUPLES_OK)
+                lua_pushlightuserdata(pq.luaVM, e.result);
             else
             {
-                if (result) PQclear(result);
+                if (e.result) PQclear(e.result);
                 lua_pushboolean(pq.luaVM, false);
             }
-            lua_pcall(pq.luaVM, 1, 0, 0);
+        }
+
+        int rc = lua_pcall(pq.luaVM, 1, 0, 0);
+        if (rc != LUA_OK)
+        {
+            const char* err = lua_tostring(pq.luaVM, -1);
+            if (err)
+                printf("[ml_pgsql] Lua callback error: %s\n", err);
+            lua_pop(pq.luaVM, 1);
         }
 
         /* Drain remaining results — required by libpq non-blocking protocol. */
@@ -97,7 +130,5 @@ void CPostgresManager::ProcessPendingQueries()
         while ((extra = PQgetResult(conn)) != nullptr) PQclear(extra);
 
         luaL_unref(pq.luaVM, LUA_REGISTRYINDEX, pq.callbackRef);
-        pConn->SetQueryInFlight(false);
-        it = m_pendingQueries.erase(it);
     }
 }

@@ -17,7 +17,13 @@ CPostgresConnection::CPostgresConnection(lua_State* pLuaVM, const char* szConnec
 {
     m_pConnection = PQconnectdb(szConnectionInfo);
     if (IsConnected())
-        PQsetnonblocking(m_pConnection, 1);
+    {
+        if (PQsetnonblocking(m_pConnection, 1) == -1)
+        {
+            PQfinish(m_pConnection);
+            m_pConnection = nullptr;
+        }
+    }
 }
 
 CPostgresConnection::~CPostgresConnection()
