@@ -43,6 +43,51 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Cache vcpkg libpq x86
+        if: matrix.arch == 'x86'
+        id: cache-libpq-x86
+        uses: actions/cache@v4
+        with:
+          path: C:\vcpkg\installed\x86-windows
+          key: vcpkg-libpq-x86-windows-${{ hashFiles('C:/vcpkg/versions/baseline.json') }}
+
+      - name: Install libpq x86 via vcpkg (first run ~15 min; cached ~30 s)
+        if: matrix.arch == 'x86' && steps.cache-libpq-x86.outputs.cache-hit != 'true'
+        shell: powershell
+        run: C:\vcpkg\vcpkg.exe install libpq:x86-windows --recurse
+
+      - name: Wire x86 libpq.lib from vcpkg
+        if: matrix.arch == 'x86'
+        shell: powershell
+        run: |
+          $src = "C:\vcpkg\installed\x86-windows\lib\libpq.lib"
+          if (-not (Test-Path $src)) { Write-Error "libpq.lib not found at $src"; exit 1 }
+          Copy-Item $src "libs\x86\libpq.lib" -Force
+          Write-Host "Replaced libs\x86\libpq.lib with vcpkg x86-windows"
+
+      - name: Assert libpq x86 version >= 15
+        if: matrix.arch == 'x86'
+        shell: powershell
+        run: |
+          $ver = (C:\vcpkg\vcpkg.exe list libpq:x86-windows) |
+                 Select-String 'libpq:x86-windows\s+(\d+)\.' |
+                 ForEach-Object { [int]$_.Matches[0].Groups[1].Value }
+          Write-Host "libpq:x86-windows major version: $ver"
+          if ($ver -lt 15) { Write-Error "libpq x86 version $ver < 15"; exit 1 }
+
+      - name: Update vendor/libpq headers from EDB PG15 x64 zip (arch-neutral headers)
+        if: matrix.arch == 'x86'
+        shell: powershell
+        run: |
+          $url = "https://get.enterprisedb.com/postgresql/postgresql-15.18-1-windows-x64-binaries.zip"
+          Invoke-WebRequest $url -OutFile pg15.zip -UseBasicParsing
+          Expand-Archive pg15.zip -DestinationPath pg15_extracted
+          $inc = "pg15_extracted\pgsql\include"
+          foreach ($f in @("libpq-fe.h","libpq-events.h","postgres_ext.h","pg_config.h")) {
+              if (Test-Path "$inc\$f") { Copy-Item "$inc\$f" "vendor\libpq\$f" -Force }
+          }
+          Write-Host "vendor/libpq headers updated from EDB PG15"
+
       - name: Fix libpq x64 (pre-installed PostgreSQL on runner — no download needed)
         if: matrix.arch == 'x64'
         shell: powershell
@@ -52,6 +97,18 @@ jobs:
           $src    = "$pgBase\$pgVer\lib\libpq.lib"
           Copy-Item $src "libs\x64\libpq.lib" -Force
           Write-Host "Replaced libs\x64\libpq.lib with PostgreSQL $pgVer import lib"
+
+      - name: Assert pre-installed libpq x64 version >= 15
+        if: matrix.arch == 'x64'
+        shell: powershell
+        run: |
+          $pgBase = "C:\Program Files\PostgreSQL"
+          $pgVer  = (Get-ChildItem $pgBase | Sort-Object Name -Descending | Select-Object -First 1).Name
+          Write-Host "Detected PostgreSQL $pgVer on runner"
+          if ([int]($pgVer -replace '\D','') -lt 15) {
+            Write-Error "Runner PostgreSQL $pgVer < 15"; exit 1
+          }
+          Write-Host "Version OK: $pgVer >= 15"
 
       - name: Update Premake5 to beta2 (bundled exe is too old for vs2022)
         shell: powershell
@@ -93,10 +150,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Install dependencies (libpq-dev PG15 via PGDG)
         run: |
+          sudo apt-get install -y curl ca-certificates
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+          . /etc/os-release
+          sudo tee /etc/apt/sources.list.d/pgdg.sources > /dev/null <<EOF
+          Types: deb
+          URIs: https://apt.postgresql.org/pub/repos/apt
+          Suites: ${VERSION_CODENAME}-pgdg
+          Components: main
+          Signed-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+          EOF
           sudo apt-get update -q
-          sudo apt-get install -y libpq-dev make
+          sudo apt-get install -y postgresql-client-15 "libpq-dev=15.*" make
+          pg_config --version
+          pg_config --includedir
 
       - name: Download Premake5 (Linux)
         run: |
