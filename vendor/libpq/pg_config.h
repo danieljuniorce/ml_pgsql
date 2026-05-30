@@ -779,7 +779,7 @@
 #define PACKAGE_NAME "PostgreSQL"
 
 /* Define to the full name and version of this package. */
-#define PACKAGE_STRING "PostgreSQL 14devel"
+#define PACKAGE_STRING "PostgreSQL 15.0"
 
 /* Define to the one symbol short name of this package. */
 #define PACKAGE_TARNAME "postgresql"
@@ -788,7 +788,7 @@
 #define PACKAGE_URL "https://www.postgresql.org/"
 
 /* Define to the version of this package. */
-#define PACKAGE_VERSION "14devel"
+#define PACKAGE_VERSION "15.0"
 
 /* Define to the name of a signed 128-bit integer type. */
 /* #undef PG_INT128_TYPE */
@@ -801,10 +801,10 @@
 #define PG_KRB_SRVNAM "postgres"
 
 /* PostgreSQL major version as a string */
-#define PG_MAJORVERSION "14"
+#define PG_MAJORVERSION "15"
 
 /* PostgreSQL major version number */
-#define PG_MAJORVERSION_NUM 14
+#define PG_MAJORVERSION_NUM 15
 
 /* PostgreSQL minor version number */
 #define PG_MINORVERSION_NUM 0
@@ -816,13 +816,13 @@
 #define PG_USE_STDBOOL 1
 
 /* PostgreSQL version as a string */
-#define PG_VERSION "14devel"
+#define PG_VERSION "15.0"
 
 /* PostgreSQL version as a number */
-#define PG_VERSION_NUM 140000
+#define PG_VERSION_NUM 150000
 
 /* A string containing the version number, platform, and C compiler */
-#define PG_VERSION_STR "PostgreSQL 14devel, compiled by Visual C++ build " CppAsString2(_MSC_VER) ", 32-bit"
+#define PG_VERSION_STR "PostgreSQL 15.0, compiled by Visual C++ build " CppAsString2(_MSC_VER) ", 32-bit"
 
 /* Define to 1 to allow profiling output to be saved separately for each
    process. */
